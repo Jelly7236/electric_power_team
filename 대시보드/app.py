@@ -307,7 +307,7 @@ st.markdown("""
 @st.cache_data(ttl=3600)
 def load_data():
     """CSV 데이터 로드 및 전처리 (캐싱 최적화)"""
-    df = pd.read_csv('C:\\Users\\USER\\Desktop\\electric_power_team\\data\\test6.csv')
+    df = pd.read_csv("data_dash\\test6.csv")
     df['측정일시'] = pd.to_datetime(df['측정일시'])
     return df
 
