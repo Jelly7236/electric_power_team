@@ -288,12 +288,15 @@ def create_chart_image(df, chart_type):
         ax.grid(False)
 
         # ✅ 범례는 하단 중앙으로 '한 번만' 표시
-        ax.legend(
-            loc='lower center',
-            ncol=3,
-            bbox_to_anchor=(0.5, -0.28),
-            frameon=False
-        )
+        leg = ax.legend(
+            loc='center left',        # 축의 왼쪽 중앙을 기준으로
+            bbox_to_anchor=(1.02, 0.5),  # 축 바깥 오른쪽(1.02), 수직 중앙(0.5)
+            ncol=1,                   # 세로(1열)
+            frameon=False,
+            borderaxespad=0.0,        # 축과 범례 사이 여백 최소화
+            handlelength=1.5,         # 범례 마커 길이
+            labelspacing=0.6          # 라벨 간 여백
+            )
 
         # ✅ 범례 공간 확보
         plt.subplots_adjust(bottom=0.40)
