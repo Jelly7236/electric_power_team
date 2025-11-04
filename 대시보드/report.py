@@ -270,6 +270,14 @@ def create_chart_image(df, chart_type):
             ax.bar(dates, vals, bottom=bottom, label=label, color=color)
             bottom += vals
 
+                # ⬇️ 범례를 그래프 하단 중앙으로
+        leg = ax.legend(
+            loc='lower center',
+            ncol=3,
+            bbox_to_anchor=(0.5, -0.35),   # 축 아래로 내리기
+            frameon=False
+        )
+
         ax.set_title("일별 전력사용량 (부하 유형별)")
         ax.set_ylabel("kWh")
         ax.tick_params(axis='x', rotation=45)
