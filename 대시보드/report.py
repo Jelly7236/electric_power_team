@@ -20,38 +20,38 @@ warnings.filterwarnings("ignore")
 # 🏆 Matplotlib 한글 폰트 설정 및 캐시 재빌드 (최종 수정)
 # ==========================================================
 def set_korean_font():
-    # 1. 맑은 고딕 경로 설정 시도 (Windows 표준)
-    font_path_win = 'C:/Windows/Fonts/malgun.ttf' 
-    font_name = None
+    # 1. Nanum Gothic을 시스템에서 찾도록 시도
+    font_name = 'NanumGothic'
+    font_path_nanum = None
 
-    if font_manager.findfont(font_manager.FontProperties(fname=font_path_win)):
-        font_name = font_manager.FontProperties(fname=font_path_win).get_name()
-    
-    # 2. 폰트 캐시 제거 및 폰트 강제 적용
-    if font_name:
-        rc('font', family=font_name)
-        print(f"✅ 폰트 적용: {font_name} (Windows 경로)")
+    # 2. 폰트 경로 찾기 (Streamlit Cloud 환경에서는 이 부분이 주로 작동)
+    for font in font_manager.findSystemFonts():
+        if 'nanumgothic' in font.lower():
+            font_path_nanum = font
+            break
+
+    # 3. 폰트 설정 적용
+    if font_path_nanum:
+        font_prop = font_manager.FontProperties(fname=font_path_nanum)
+        rc('font', family=font_prop.get_name())
+        print(f"✅ 폰트 적용: {font_prop.get_name()} (시스템/패키지 경로)")
     else:
-        # 3. 폰트 파일이 없는 환경 (Linux/Docker)일 경우 NanumGothic으로 재시도
+        # 최후의 수단: 직접 업로드한 폰트 파일 경로 지정
+        # (프로젝트 루트의 'fonts/' 폴더에 'NanumGothic.ttf' 파일이 있다고 가정)
         try:
-            nanum_font = 'NanumGothic'
-            if nanum_font in [f.name for f in font_manager.fontManager.ttflist]:
-                rc('font', family=nanum_font)
-                print(f"✅ 폰트 적용: {nanum_font} (Linux/Docker 환경)")
-            else:
-                print("❌ Malgun Gothic 및 Nanum Gothic 폰트를 시스템에서 찾을 수 없습니다.")
-        except Exception as e:
-            print(f"폰트 재시도 중 오류: {e}")
-
+            rc('font', family='NanumGothic') 
+            print("⚠️ NanumGothic 이름으로 설정 시도 (packages.txt 설치 필요)")
+        except:
+            print("❌ 폰트 설정 실패. packages.txt 및 fonts/ 파일 확인 필요.")
+            
     # 공통: 마이너스 기호 깨짐 방지
     plt.rcParams['axes.unicode_minus'] = False 
     
-    # 🏆 중요: 폰트 캐시를 강제로 업데이트하여 Streamlit 환경에서 즉시 적용되도록 함
+    # 폰트 캐시를 재빌드하여 Streamlit Cloud 환경에서 즉시 적용되도록 함
     try:
-        font_manager._rebuild() # 폰트 캐시를 재빌드 (일부 Matplotlib 버전에서 필요)
-        print("✅ Matplotlib 폰트 캐시 재빌드 완료.")
+        font_manager._rebuild()
     except:
-        pass # 재빌드 기능이 없는 버전일 경우 무시
+        pass
 
 set_korean_font()
 # ==========================================================
