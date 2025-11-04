@@ -6,6 +6,8 @@ import plotly.express as px
 from docx.shared import Inches
 import warnings
 import traceback
+from PIL import Image  # 🔥 추가!
+
 warnings.filterwarnings("ignore")
 
 # 요금 단가 및 설정
@@ -53,78 +55,125 @@ def calculate_monthly_power_factor(df):
     df_night = df[(df['hour'] >= 22) | (df['hour'] < 9)]
     total_kwh_night = df_night['전력사용량(kWh)'].sum()
     
-    # ⭐ 수정: 절대값 사용하여 진상/지상 관계없이 역률 계산
     lag_kvarh = df_night['지상무효전력량(kVarh)'].sum()
     lead_kvarh = df_night['진상무효전력량(kVarh)'].sum()
     
-    # 진상이 우세한지 확인 (진상 > 지상)
     if total_kwh_night > 0:
-        # 더 큰 무효전력을 사용하여 역률 계산
         net_kvarh = abs(lead_kvarh - lag_kvarh)
         pf_night_lead = (total_kwh_night / np.sqrt(total_kwh_night**2 + net_kvarh**2)) * 100
     else:
-        pf_night_lead = 100.0  # ⭐ 사용량 없으면 100%로 처리 (패널티 없음)
+        pf_night_lead = 100.0
     
     return pf_day, pf_night_lead
 
 
 def create_chart_image(df, chart_type):
-    """그래프 이미지 생성"""
+    """그래프 이미지 생성 - Plotly → PIL Image 변환"""
+    print(f"🔍 DEBUG: 차트 생성 시작 - {chart_type}")
+    
     if df.empty:
-        return BytesIO()
+        print(f"⚠️ DEBUG: 데이터프레임이 비어있음")
+        return create_empty_image()
 
-    fig = None
+    try:
+        fig = None
+        
+        if chart_type == 'daily_usage':
+            # 일별 부하 유형별 Stack Bar Chart
+            df['날짜'] = df['측정일시'].dt.date.astype(str)
+            daily_usage = df.groupby(['날짜', '작업유형'])['전력사용량(kWh)'].sum().reset_index()
+            
+            fig = px.bar(daily_usage, x='날짜', y='전력사용량(kWh)', color='작업유형',
+                         title='일별 전력사용량 (부하 유형별)', color_discrete_map=LOAD_COLORS)
+            
+            fig.update_layout(barmode='stack', height=400, margin=dict(t=50, b=50, l=50, r=50),
+                             font=dict(size=10, color='black'),
+                             legend=dict(orientation="h", yanchor="bottom", y=1.02))
+            fig.update_xaxes(tickangle=-45, showgrid=False)
+            fig.update_yaxes(showgrid=False)
+            
+        elif chart_type == 'monthly_comp':
+            # 전월 대비 총 사용량 비교
+            current_month = df['month'].iloc[0]
+            current_usage = df['전력사용량(kWh)'].sum()
+            prev_usage = current_usage * 0.9  # 임시 값
+            
+            comp_data = pd.DataFrame({
+                '구분': [f'{current_month-1}월 (전월)', f'{current_month}월'],
+                '총 사용량': [prev_usage, current_usage]
+            })
+            
+            fig = px.bar(comp_data, x='구분', y='총 사용량', color='구분',
+                         color_discrete_map={f'{current_month}월': '#1f77b4', 
+                                            f'{current_month-1}월 (전월)': '#ffb366'},
+                         text='총 사용량')
+            
+            fig.update_traces(texttemplate='%{y:,.0f} kWh', textposition='outside', 
+                             textfont_color='black')
+            fig.update_layout(title='총 전력사용량 비교', height=400, showlegend=False,
+                             margin=dict(t=50, b=50, l=50, r=50), font=dict(size=10, color='black'))
+            fig.update_yaxes(title_text="총 전력사용량 (kWh)", showgrid=False)
+            fig.update_xaxes(title_text="", showgrid=False)
+        
+        if fig is None:
+            print(f"⚠️ DEBUG: fig가 None")
+            return create_empty_image()
+        
+        # 🔥 Plotly → PNG → PIL Image → BytesIO 변환
+        img_bytes = fig.to_image(format="png", width=800, height=400, scale=2)
+        img = Image.open(BytesIO(img_bytes))
+        
+        # BytesIO로 저장
+        img_buf = BytesIO()
+        img.save(img_buf, format='PNG')
+        img_buf.seek(0)
+        
+        print(f"✅ DEBUG: 차트 생성 완료 - {chart_type}, 크기: {len(img_buf.getvalue())} bytes")
+        return img_buf
+        
+    except Exception as e:
+        print(f"❌ CHART ERROR: {chart_type} 생성 실패 - {e}")
+        traceback.print_exc()
+        return create_empty_image()
+
+
+def create_empty_image():
+    """빈 이미지 생성 (에러 대체용)"""
+    from PIL import Image, ImageDraw, ImageFont
     
-    if chart_type == 'daily_usage':
-        # 일별 부하 유형별 Stack Bar Chart
-        df['날짜'] = df['측정일시'].dt.date.astype(str)
-        daily_usage = df.groupby(['날짜', '작업유형'])['전력사용량(kWh)'].sum().reset_index()
-        
-        fig = px.bar(daily_usage, x='날짜', y='전력사용량(kWh)', color='작업유형',
-                     title='일별 전력사용량 (부하 유형별)', color_discrete_map=LOAD_COLORS)
-        
-        fig.update_layout(barmode='stack', height=300, margin=dict(t=50, b=50),
-                         font=dict(size=10, color='black'),
-                         legend=dict(orientation="h", yanchor="bottom", y=1.02))
-        fig.update_xaxes(tickangle=-45, showgrid=False)
-        fig.update_yaxes(showgrid=False)
-        
-    elif chart_type == 'monthly_comp':
-        # 전월 대비 총 사용량 비교
-        current_month = df['month'].iloc[0]
-        current_usage = df['전력사용량(kWh)'].sum()
-        prev_usage = current_usage * 0.9  # 임시 값
-        
-        comp_data = pd.DataFrame({
-            '구분': [f'{current_month-1}월 (전월)', f'{current_month}월'],
-            '총 사용량': [prev_usage, current_usage]
-        })
-        
-        fig = px.bar(comp_data, x='구분', y='총 사용량', color='구분',
-                     color_discrete_map={f'{current_month}월': '#1f77b4', 
-                                        f'{current_month-1}월 (전월)': '#ffb366'},
-                     text='총 사용량')
-        
-        fig.update_traces(texttemplate='%{y:,.0f} kWh', textposition='outside', 
-                         textfont_color='black')
-        fig.update_layout(title='총 전력사용량 비교', height=300, showlegend=False,
-                         margin=dict(t=50, b=50), font=dict(size=10, color='black'))
-        fig.update_yaxes(title_text="총 전력사용량 (kWh)", showgrid=False)
-        fig.update_xaxes(title_text="", showgrid=False)
+    # 800x400 흰색 배경
+    img = Image.new('RGB', (800, 400), color='white')
+    draw = ImageDraw.Draw(img)
     
-    if fig is None:
-        return BytesIO()
+    # 텍스트 추가
+    text = "차트 생성 실패"
+    # 기본 폰트 사용
+    try:
+        font = ImageFont.truetype("arial.ttf", 40)
+    except:
+        font = ImageFont.load_default()
     
-    # 이미지로 변환
+    # 텍스트 중앙 정렬
+    bbox = draw.textbbox((0, 0), text, font=font)
+    text_width = bbox[2] - bbox[0]
+    text_height = bbox[3] - bbox[1]
+    position = ((800 - text_width) // 2, (400 - text_height) // 2)
+    
+    draw.text(position, text, fill='black', font=font)
+    
+    # BytesIO로 변환
     img_buf = BytesIO()
-    fig.write_image(img_buf, format="png", width=600, height=300)
+    img.save(img_buf, format='PNG')
     img_buf.seek(0)
     return img_buf
 
 
 def get_billing_data(df):
     """요금 데이터 계산 및 Context 생성"""
+    print(f"🔍 DEBUG: get_billing_data 시작")
+    
     if df.empty:
+        print(f"⚠️ DEBUG: 데이터프레임이 비어있음")
         return {}
 
     # 기간 및 계절 결정
@@ -164,6 +213,8 @@ def get_billing_data(df):
     모든_요금_합 = total_basic_fee + 총_전력량_요금 + 지상역률_요금 + 진상역률_요금
     부가가치세 = 모든_요금_합 * 0.1
     총_요금_세금_포함 = 모든_요금_합 + 부가가치세
+    
+    print(f"✅ DEBUG: get_billing_data 완료")
     
     # Context 생성
     return {
@@ -205,34 +256,54 @@ def get_billing_data(df):
 
 def generate_report_from_template(filtered_df, template_path):
     """최종 보고서 생성"""
+    print(f"🔍 DEBUG: 고지서 생성 시작")
+    print(f"🔍 DEBUG: 템플릿 경로: {template_path}")
+    print(f"🔍 DEBUG: 템플릿 존재 여부: {Path(template_path).exists()}")
+    print(f"🔍 DEBUG: filtered_df 크기: {len(filtered_df)}")
+    
     try:
-        # 1. 템플릿 로드 시도
-        doc = DocxTemplate(template_path) # template_path는 str()로 전달되어야 함
+        # 1. 템플릿 로드
+        from pathlib import Path
+        if not Path(template_path).exists():
+            raise FileNotFoundError(f"템플릿 파일 없음: {template_path}")
+        
+        doc = DocxTemplate(template_path)
+        print(f"✅ DEBUG: 템플릿 로드 성공")
 
-        # 2. 컨텍스트 및 데이터 처리 시도
+        # 2. 컨텍스트 데이터 처리
         context = get_billing_data(filtered_df)
+        print(f"✅ DEBUG: 데이터 처리 완료")
         
-        # 3. 그래프 이미지 생성 시도
-        context['graph1'] = InlineImage(doc, create_chart_image(filtered_df, 'daily_usage'), 
-                                        width=Inches(3))
-        context['graph2'] = InlineImage(doc, create_chart_image(filtered_df, 'monthly_comp'), 
-                                        width=Inches(3))
+        # 3. 그래프 이미지 생성
+        print(f"🔍 DEBUG: 그래프 1 생성 중...")
+        img1 = create_chart_image(filtered_df, 'daily_usage')
+        context['graph1'] = InlineImage(doc, img1, width=Inches(5))
+        print(f"✅ DEBUG: 그래프 1 완료")
         
-        # 4. 렌더링 및 저장 시도
+        print(f"🔍 DEBUG: 그래프 2 생성 중...")
+        img2 = create_chart_image(filtered_df, 'monthly_comp')
+        context['graph2'] = InlineImage(doc, img2, width=Inches(5))
+        print(f"✅ DEBUG: 그래프 2 완료")
+        
+        # 4. 렌더링 및 저장
+        print(f"🔍 DEBUG: 문서 렌더링 중...")
         doc.render(context)
+        print(f"✅ DEBUG: 렌더링 완료")
+        
         file_stream = BytesIO()
         doc.save(file_stream)
         file_stream.seek(0)
-        return file_stream.read()
+        result = file_stream.read()
         
-    except FileNotFoundError:
-        # 🚨 파일 경로 문제 발생 시 출력
-        print(f"REPORT DEBUG ERROR: 템플릿 파일 누락: {template_path}")
+        print(f"✅ DEBUG: 고지서 생성 완료 - {len(result)} bytes")
+        return result
+        
+    except FileNotFoundError as e:
+        print(f"❌ REPORT ERROR: 템플릿 파일 누락 - {e}")
         traceback.print_exc()
         return b''
         
     except Exception as e:
-        # 🚨 기타 오류 발생 시 출력 (데이터 처리, 그래프 생성, 렌더링 등)
-        print(f"REPORT DEBUG ERROR: 고지서 생성 중 기타 오류 발생: {e}")
-        traceback.print_exc() 
+        print(f"❌ REPORT ERROR: 고지서 생성 실패 - {type(e).__name__}: {e}")
+        traceback.print_exc()
         return b''
