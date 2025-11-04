@@ -296,7 +296,7 @@ def create_chart_image(df, chart_type):
             borderaxespad=0.0,        # 축과 범례 사이 여백 최소화
             handlelength=1.5,         # 범례 마커 길이
             labelspacing=0.6          # 라벨 간 여백
-            )
+        )
 
         # ✅ 범례 공간 확보
         plt.subplots_adjust(bottom=0.40)
