@@ -118,9 +118,18 @@ def create_chart_image(df, chart_type):
     
     # 이미지로 변환
     img_buf = BytesIO()
-    fig.write_image(img_buf, format="png", width=600, height=300)
-    img_buf.seek(0)
-    return img_buf
+    
+    # 🚨 여기에 try-except 블록을 추가합니다 🚨
+    try:
+        fig.write_image(img_buf, format="png", width=600, height=300) 
+        img_buf.seek(0)
+        return img_buf
+        
+    except Exception as e:
+        # 이 오류가 Kaleido 설치/의존성 문제입니다.
+        print(f"DEBUG ERROR: Plotly 이미지 변환(Kaleido) 실패. 오류: {e}")
+        # 오류가 나더라도 빈 이미지 스트림을 반환하여 워드 생성 프로세스가 멈추는 것을 방지
+        return BytesIO()
 
 
 def get_billing_data(df):
