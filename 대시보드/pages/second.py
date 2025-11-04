@@ -502,7 +502,7 @@ else:
     selected_work_status = [st.session_state.current_work_status]
 
 # 고지서 생성
-word_file_data = generate_report_from_template(filtered_df, TEMPLATE_PATH)
+word_file_data = generate_report_from_template(filtered_df, str(TEMPLATE_PATH))
 
 # ============================================================================
 # Header & downloads
