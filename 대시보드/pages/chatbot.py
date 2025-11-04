@@ -64,6 +64,10 @@ fig = go.Figure(...)
 st.plotly_chart(fig, use_container_width=True)
 ```
 
+- figure.show()나 fig.show() 절대 금지
+- plotly.io.show() 절대 금지
+- 반드시 st.plotly_chart()만 사용
+
 사용자 질문: "{user_query}"
 """
 
