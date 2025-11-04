@@ -307,7 +307,7 @@ st.markdown("""
 @st.cache_data(ttl=3600)
 def load_data():
     """CSV 데이터 로드 및 전처리 (캐싱 최적화)"""
-    df = pd.read_csv("data_dash/test6.csv")
+    df = pd.read_csv("대시보드/data_dash/test6.csv")
     df['측정일시'] = pd.to_datetime(df['측정일시'])
     return df
 
@@ -781,8 +781,8 @@ if reset:
     ss.accumulated_data = pd.DataFrame()
     import os
     try:
-        if os.path.exists('data_dash/december_streaming.csv'):
-            os.remove('data_dash/december_streaming.csv')
+        if os.path.exists('대시보드/data_dash/december_streaming.csv'):
+            os.remove('대시보드/data_dash/december_streaming.csv')
     except:
         pass
     st.rerun()
@@ -793,7 +793,7 @@ if ss.running and ss.step < len(ss.full_data):
     ss.accumulated_data = pd.concat([ss.accumulated_data, current_row], ignore_index=True)
     ss.step += 1
     try:
-        ss.accumulated_data.to_csv('data_dash/december_streaming.csv', index=False, encoding='utf-8-sig')
+        ss.accumulated_data.to_csv('대시보드/data_dash/december_streaming.csv', index=False, encoding='utf-8-sig')
     except:
         pass
 
