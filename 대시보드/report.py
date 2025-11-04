@@ -12,6 +12,34 @@ import streamlit as st
 import matplotlib
 matplotlib.use("Agg")  # 헤드리스(배포) 환경용 백엔드
 import matplotlib.pyplot as plt
+from matplotlib import font_manager, rc # 👈 폰트 관리를 위한 라이브러리 추가
+
+warnings.filterwarnings("ignore")
+
+# ==========================================================
+# 🏆 Matplotlib 한글 폰트 설정 시작 (추가 부분)
+# ==========================================================
+try:
+    # 맑은 고딕 폰트 경로 (Windows 표준)
+    font_path = 'C:/Windows/Fonts/malgun.ttf' 
+    
+    # 폰트 경로가 유효한지 확인 후 적용
+    if font_manager.findfont(font_manager.FontProperties(fname=font_path)):
+        font_name = font_manager.FontProperties(fname=font_path).get_name()
+        rc('font', family=font_name) 
+        plt.rcParams['axes.unicode_minus'] = False # 마이너스 기호 깨짐 방지
+        print("✅ Matplotlib 폰트 설정 완료: Malgun Gothic")
+    else:
+        # Linux 또는 폰트 이름이 다른 경우를 위한 일반 설정 (나눔 고딕 등)
+        # 배포 환경에서는 'NanumGothic'이 일반적이며, 배포 시 설치 필요
+        if 'NanumGothic' in [f.name for f in font_manager.fontManager.ttflist]:
+             rc('font', family='NanumGothic') 
+        else:
+             print("⚠️ 한글 폰트(Malgun/Nanum)를 찾을 수 없습니다. 그래프에 'ㅁ'이 표시될 수 있습니다.")
+
+except Exception as e:
+    print(f"폰트 설정 중 오류 발생: {e}")
+
 
 warnings.filterwarnings("ignore")
 
