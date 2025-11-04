@@ -45,12 +45,6 @@ def call_gemini_api(user_query: str, context: str) -> tuple[str, str]:
 [현재 대시보드 데이터]
 {context}
 
-참고: 사용 가능한 데이터프레임:
-- df: 전체 원본 데이터 (측정일시, 전력사용량(kWh), 전기요금(원), 탄소배출량(tCO2), 작업유형 등)
-- hourly: 시간대별 집계 데이터
-- monthly: 월별 집계 데이터
-- daily: 일별 집계 데이터
-
 [답변 가이드]
 1. 질문의 핵심을 파악하세요
 2. 위 데이터를 바탕으로 정확하고 구체적으로 답변하세요
@@ -61,14 +55,11 @@ def call_gemini_api(user_query: str, context: str) -> tuple[str, str]:
 [그래프 생성 요청 시]
 사용자가 데이터 시각화를 요청하면:
 - 분석 내용을 먼저 설명하고 그래프를 생성하세요
-- 답변에서 그래프를 요청했을 때는 그래프에 대해서만 언급하고, 코드를 요청했을 때는 코드에 대해서만 언급하세요.
 - 코드를 요청했을 때 다음 형식으로 Python 코드를 생성하세요:
 ```python
 import plotly.graph_objects as go
 import pandas as pd
 
-# df는 이미 로드된 DataFrame입니다
-# 코드 작성...
 fig = go.Figure(...)
 st.plotly_chart(fig, use_container_width=True)
 ```
@@ -94,7 +85,7 @@ st.plotly_chart(fig, use_container_width=True)
 # ---- 데이터 로드 ----
 @st.cache_data
 def load_data():
-    df = pd.read_csv("data_dash\\train_dash_df.csv")
+    df = pd.read_csv("대시보드/data_dash/train_dash_df.csv")
     df['측정일시'] = pd.to_datetime(df['측정일시'])
     df['month'] = df['측정일시'].dt.month
     df['hour'] = df['측정일시'].dt.hour
@@ -106,7 +97,7 @@ def load_data():
 def load_december_data():
     """12월 실시간 스트리밍 데이터 로드"""
     try:
-        df_dec = pd.read_csv('data_dash\\december_streaming.csv')
+        df_dec = pd.read_csv('대시보드/data_dash/december_streaming.csv')
         df_dec['측정일시'] = pd.to_datetime(df_dec['측정일시'])
         df_dec['month'] = 12
         df_dec['hour'] = df_dec['측정일시'].dt.hour
@@ -177,7 +168,7 @@ def generate_context(df):
 
     # ========== 추가: 역률 데이터 ==========
     try:
-        monthly_summary_df = pd.read_csv('data_dash\\월별 역률 패널티 계산.csv')
+        monthly_summary_df = pd.read_csv('대시보드/data_dash/월별 역률 패널티 계산.csv')
         total_pf_adjustment = monthly_summary_df['역률_조정금액(원)'].sum()
         context += f"""
 [역률 관련 KPI - KEPCO 기준]
@@ -204,7 +195,7 @@ def generate_context(df):
     # ========== 월별 분석 ==========
     monthly = df.groupby('month').agg({
         '전력사용량(kWh)': 'sum',
-        '전기요금(원)': 'mean'
+        '전기요금(원)': 'sum'
     }).reset_index()
     monthly = monthly[monthly['month'] <= 11]
     
@@ -213,7 +204,7 @@ def generate_context(df):
 [월별 분석]
 """
     for _, row in monthly.iterrows():
-        context += f"\n  * {int(row['month'])}월: 사용량 {row['전력사용량(kWh)']:,.0f} kWh, 평균요금 {row['전기요금(원)']:,.0f} 원"
+        context += f"\n  * {int(row['month'])}월: 사용량 {row['전력사용량(kWh)']:,.0f} kWh, 월 전기요금 {row['전기요금(원)']:,.0f} 원"
     
     # ========== 시간대별 분석 (1~11월 데이터만) ==========
     hourly = filtered_df.groupby('hour').agg({
@@ -385,7 +376,6 @@ with chat_container:
             if msg["role"] == "user":
                 st.markdown(f'<div style="text-align: right;"><span class="user-message-content">{msg["content"]}</span></div>', unsafe_allow_html=True)
             else:
-                # 마크다운 형식으로 표시 (링크, 볼드 등 지원)
                 st.markdown(f'<div style="text-align: left; background: #e8f4f8; color: #333; padding: 12px 16px; border-radius: 12px; max-width: 70%; word-wrap: break-word; display: inline-block;">{msg["content"]}</div>', unsafe_allow_html=True)
         
         # 마지막 메시지가 사용자 메시지면 로딩 중 표시
@@ -402,7 +392,7 @@ with chat_container:
                 ss["show_code_only"] = "코드" in user_query and "그래프" not in user_query
                 ss["show_graph_only"] = "그래프" in user_query and "코드" not in user_query
 
-                # AI 응답 생성 (텍스트와 코드 분리)
+                # AI 응답 생성
                 ai_response, code = call_gemini_api(user_query, context_data)
             
             # 응답을 chat_history에 추가
@@ -437,7 +427,7 @@ if ss.get("graph_code") is not None:
     st.divider()
     with st.container(border=True):
         st.subheader("📊 데이터 시각화")
-
+ 
         # ✅ 코드만 보여주기 요청 시
         if ss.get("show_code_only"):
             st.code(ss["graph_code"], language="python")
@@ -456,7 +446,7 @@ if ss.get("graph_code") is not None:
             except Exception as e:
                 st.error(f"❌ 그래프 생성 오류: {str(e)}")
 
-        # ✅ 둘 다 요청하거나 일반 요청 시 (기본 동작)
+        # ✅ 둘 다 요청하거나 일반 요청 시
         else:
             st.code(ss["graph_code"], language="python")
             try:

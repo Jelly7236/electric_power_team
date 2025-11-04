@@ -35,10 +35,10 @@ with st.expander("① EDA", expanded=False):
     st.table(load_profile_data)
     
     # 시간대별 부하 구분 이미지 (시각화 자료)
-    st.image("data_dash\\15min_avg_lagging_pf_cycle.png", caption="")
+    st.image("대시보드/data_dash/15min_avg_lagging_pf_cycle.png", caption="")
     st.markdown("_*(9시~22시 기준) 휴무일 때 지상역률 100% , 가동일 때 지상역률 관리 미흡 → 휴무 시에는 역률이 매우 안정적이며, 요금 문제가 발생하지 않음._")
 
-    st.image("data_dash\\15min_avg_leading_pf_cycle.png", caption="")
+    st.image("대시보드/data_dash/15min_avg_leading_pf_cycle.png", caption="")
     st.markdown("_*(22시~09시 기준) 진상역률이 규제 기준(95%)을 수준을 유지 → 시스템이 진상 무효 전력 발생에 대해서는 완벽하게 관리하고 있으며, 이로 인한 요금 추가 페널티는 발생하지 않음._")
     st.markdown("---")
 
@@ -57,7 +57,7 @@ with st.expander("① EDA", expanded=False):
 
     st.dataframe(table_data, use_container_width=True)
 
-    st.image("data_dash\\hourly_pattern.png", use_container_width=True)
+    st.image("대시보드/data_dash/hourly_pattern.png", use_container_width=True)
     st.markdown("---")
  
     # 3. 데이터 학습 제외 사유 및 예외 패턴
@@ -70,7 +70,7 @@ with st.expander("① EDA", expanded=False):
     """)
     
     # 19:00-00:00 월별 전력사용량 그래프 이미지 (패턴 비교)
-    st.image("data_dash\\exclude_month.png", caption="")
+    st.image("대시보드/data_dash/exclude_month.png", caption="")
     st.markdown("---")
 
 
@@ -81,10 +81,10 @@ with st.expander("① EDA", expanded=False):
     st.markdown("**💰 요금 가감 기준 (평균 역률 기준)**")
     
     st.markdown("""
-    * **09시 ~ 22시 (주간 시간대 - 지상역률 기준):**
+    * **09시 ~ 23시 (주간 시간대 - 지상역률 기준):**
         * **미달 시 (90% 미만):** 평균 역률이 90% 미달 시, **60%**까지 매 1%당 기본요금의 **0.2%** 추가.
         * **초과 시 (90% 초과):** 평균 역률이 90% 초과 시, **95%**까지 매 1%당 기본요금의 **0.2%** 감액.
-    * **22시 ~ 09시 (야간 시간대 - 진상역률 기준):**
+    * **23시 ~ 09시 (야간 시간대 - 진상역률 기준):**
         * **미달 시 (95% 미만):** 평균 역률이 95% 미달 시, **60%**까지 매 1%당 기본요금의 **0.2%** 추가.
     """)
     
@@ -94,10 +94,10 @@ with st.expander("① EDA", expanded=False):
     st.markdown("### 5. 단가 공식")
     col1, col2 = st.columns(2)
     with col1:
-        st.image("data_dash/단가1.png", use_container_width=True)
+        st.image("대시보드/data_dash/단가1.png", use_container_width=True)
 
     with col2:
-        st.image("data_dash/단가2.png", use_container_width=True)
+        st.image("대시보드/data_dash/단가2.png", use_container_width=True)
 
 
 # ── 2) 12월 데이터 정보 ──
