@@ -123,7 +123,7 @@ parso @ file:///C:/b/abs_834b4mj92b/croot/parso_1733963322289/work
 patsy @ file:///home/conda/feedstock_root/build_artifacts/bld/rattler-build_patsy_1760998269/work
 pillow @ file:///C:/b/abs_b50vowcrzo/croot/pillow_1738010273782/work
 platformdirs @ file:///C:/b/abs_ddh15014or/croot/platformdirs_1744273060660/work
-plotly==6.3.1
+plotly>=5.22
 pluggy==1.6.0
 pmdarima @ file:///D:/bld/pmdarima_1720972362189/work
 prometheus_client @ file:///C:/b/abs_8b175q_ub8/croot/prometheus_client_1744271638821/work
