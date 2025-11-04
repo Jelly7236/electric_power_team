@@ -4,9 +4,11 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 from docx.shared import Inches
+from pathlib import Path
 import warnings
 import traceback
 import streamlit as st
+
 warnings.filterwarnings("ignore")
 
 # 요금 단가 및 설정
@@ -25,6 +27,58 @@ LOAD_COLORS = {
     'Maximum_Load': '#EF5350'   # 최대부하
 }
 
+# =========================
+# 안전 이미지 유틸
+# =========================
+def _tiny_placeholder_png() -> BytesIO:
+    """1x1 투명 PNG 버퍼 생성 (Pillow 없이도 동작하는 순수 PNG 바이트)"""
+    # 미니멀 투명 PNG (base64 아님, 원시 바이트)
+    data = (
+        b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
+        b"\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\x0bIDATx\x9cc``\x00"
+        b"\x00\x00\x02\x00\x01\xe2!\xbc3\x00\x00\x00\x00IEND\xaeB`\x82"
+    )
+    buf = BytesIO(data)
+    buf.seek(0)
+    return buf
+
+def _safe_inline_image(doc: DocxTemplate, img_buf: BytesIO | None, width_in=3.0,
+                       use_placeholder=True) -> InlineImage | None:
+    """
+    - img_buf가 비거나 None이면:
+        * use_placeholder=True: 1x1 투명 PNG로 대체 → InlineImage 반환
+        * use_placeholder=False: None 반환 (템플릿에서 {% if %}로 감싸야 함)
+    - 정상 버퍼면 InlineImage로 감싸서 반환
+    """
+    try:
+        if img_buf is None:
+            if use_placeholder:
+                return InlineImage(doc, _tiny_placeholder_png(), width=Inches(width_in))
+            return None
+
+        # 버퍼 길이 점검
+        try:
+            size = img_buf.getbuffer().nbytes
+        except Exception:
+            # 일부 환경에서 getbuffer 불가 → 읽어서 길이 체크
+            p = img_buf.tell()
+            img_buf.seek(0, 2)
+            size = img_buf.tell()
+            img_buf.seek(p)
+
+        if size <= 0:
+            if use_placeholder:
+                return InlineImage(doc, _tiny_placeholder_png(), width=Inches(width_in))
+            return None
+
+        img_buf.seek(0)
+        return InlineImage(doc, img_buf, width=Inches(width_in))
+    except Exception:
+        if use_placeholder:
+            return InlineImage(doc, _tiny_placeholder_png(), width=Inches(width_in))
+        return None
+
+# =========================
 
 def calculate_power_factor_penalty(pf, base_pf, min_pf=60.0, max_pf=95.0):
     """역률 패널티 비율 계산 (통합 함수)"""
@@ -38,7 +92,6 @@ def calculate_power_factor_penalty(pf, base_pf, min_pf=60.0, max_pf=95.0):
         target_pf = max(pf, min_pf)
         pf_diff = base_pf - target_pf
         return (pf_diff * POWER_FACTOR_RATE)  # 양수: 추가
-
 
 def calculate_monthly_power_factor(df):
     """월평균 역률 계산 (지상/진상)"""
@@ -54,83 +107,79 @@ def calculate_monthly_power_factor(df):
     df_night = df[(df['hour'] >= 22) | (df['hour'] < 9)]
     total_kwh_night = df_night['전력사용량(kWh)'].sum()
     
-    # ⭐ 수정: 절대값 사용하여 진상/지상 관계없이 역률 계산
     lag_kvarh = df_night['지상무효전력량(kVarh)'].sum()
     lead_kvarh = df_night['진상무효전력량(kVarh)'].sum()
     
-    # 진상이 우세한지 확인 (진상 > 지상)
     if total_kwh_night > 0:
-        # 더 큰 무효전력을 사용하여 역률 계산
         net_kvarh = abs(lead_kvarh - lag_kvarh)
         pf_night_lead = (total_kwh_night / np.sqrt(total_kwh_night**2 + net_kvarh**2)) * 100
     else:
-        pf_night_lead = 100.0  # ⭐ 사용량 없으면 100%로 처리 (패널티 없음)
+        pf_night_lead = 100.0
     
     return pf_day, pf_night_lead
 
-
 def create_chart_image(df, chart_type):
-    """그래프 이미지 생성"""
-    if df.empty:
-        return BytesIO()
-
-    fig = None
-    
-    if chart_type == 'daily_usage':
-        # 일별 부하 유형별 Stack Bar Chart
-        df['날짜'] = df['측정일시'].dt.date.astype(str)
-        daily_usage = df.groupby(['날짜', '작업유형'])['전력사용량(kWh)'].sum().reset_index()
-        
-        fig = px.bar(daily_usage, x='날짜', y='전력사용량(kWh)', color='작업유형',
-                     title='일별 전력사용량 (부하 유형별)', color_discrete_map=LOAD_COLORS)
-        
-        fig.update_layout(barmode='stack', height=300, margin=dict(t=50, b=50),
-                         font=dict(size=10, color='black'),
-                         legend=dict(orientation="h", yanchor="bottom", y=1.02))
-        fig.update_xaxes(tickangle=-45, showgrid=False)
-        fig.update_yaxes(showgrid=False)
-        
-    elif chart_type == 'monthly_comp':
-        # 전월 대비 총 사용량 비교
-        current_month = df['month'].iloc[0]
-        current_usage = df['전력사용량(kWh)'].sum()
-        prev_usage = current_usage * 0.9  # 임시 값
-        
-        comp_data = pd.DataFrame({
-            '구분': [f'{current_month-1}월 (전월)', f'{current_month}월'],
-            '총 사용량': [prev_usage, current_usage]
-        })
-        
-        fig = px.bar(comp_data, x='구분', y='총 사용량', color='구분',
-                     color_discrete_map={f'{current_month}월': '#1f77b4', 
-                                        f'{current_month-1}월 (전월)': '#ffb366'},
-                     text='총 사용량')
-        
-        fig.update_traces(texttemplate='%{y:,.0f} kWh', textposition='outside', 
-                         textfont_color='black')
-        fig.update_layout(title='총 전력사용량 비교', height=300, showlegend=False,
-                         margin=dict(t=50, b=50), font=dict(size=10, color='black'))
-        fig.update_yaxes(title_text="총 전력사용량 (kWh)", showgrid=False)
-        fig.update_xaxes(title_text="", showgrid=False)
-    
-    if fig is None:
-        return BytesIO()
-    
-    # 이미지로 변환
-    img_buf = BytesIO()
-    
-    # 🚨 여기에 try-except 블록을 추가합니다 🚨
+    """그래프 이미지 생성 → PNG BytesIO. 실패 시 플레이스홀더 반환(빈 버퍼 금지)"""
     try:
-        fig.write_image(img_buf, format="png", width=600, height=300) 
-        img_buf.seek(0)
-        return img_buf
-        
-    except Exception as e:
-        # 이 오류가 Kaleido 설치/의존성 문제입니다.
-        print(f"DEBUG ERROR: Plotly 이미지 변환(Kaleido) 실패. 오류: {e}")
-        # 오류가 나더라도 빈 이미지 스트림을 반환하여 워드 생성 프로세스가 멈추는 것을 방지
-        return BytesIO()
+        if df.empty:
+            return _tiny_placeholder_png()
 
+        fig = None
+        if chart_type == 'daily_usage':
+            df = df.copy()
+            df['날짜'] = df['측정일시'].dt.date.astype(str)
+            daily_usage = df.groupby(['날짜', '작업유형'])['전력사용량(kWh)'].sum().reset_index()
+            fig = px.bar(
+                daily_usage, x='날짜', y='전력사용량(kWh)', color='작업유형',
+                title='일별 전력사용량 (부하 유형별)', color_discrete_map=LOAD_COLORS
+            )
+            fig.update_layout(
+                barmode='stack', height=300, margin=dict(t=50, b=50),
+                font=dict(size=10, color='black'),
+                legend=dict(orientation="h", yanchor="bottom", y=1.02)
+            )
+            fig.update_xaxes(tickangle=-45, showgrid=False)
+            fig.update_yaxes(showgrid=False)
+
+        elif chart_type == 'monthly_comp':
+            current_month = int(df['month'].iloc[0])
+            current_usage = float(df['전력사용량(kWh)'].sum())
+            prev_usage = current_usage * 0.9  # 임시 값
+            comp_data = pd.DataFrame({
+                '구분': [f'{current_month-1}월 (전월)', f'{current_month}월'],
+                '총 사용량': [prev_usage, current_usage]
+            })
+            fig = px.bar(
+                comp_data, x='구분', y='총 사용량', color='구분',
+                color_discrete_map={
+                    f'{current_month}월': '#1f77b4',
+                    f'{current_month-1}월 (전월)': '#ffb366'
+                },
+                text='총 사용량'
+            )
+            fig.update_traces(texttemplate='%{y:,.0f} kWh', textposition='outside', textfont_color='black')
+            fig.update_layout(
+                title='총 전력사용량 비교', height=300, showlegend=False,
+                margin=dict(t=50, b=50), font=dict(size=10, color='black')
+            )
+            fig.update_yaxes(title_text="총 전력사용량 (kWh)", showgrid=False)
+            fig.update_xaxes(title_text="", showgrid=False)
+
+        if fig is None:
+            return _tiny_placeholder_png()
+
+        img_buf = BytesIO()
+        try:
+            # Kaleido 필요. 실패해도 플레이스홀더 반환.
+            fig.write_image(img_buf, format="png", width=600, height=300)
+            img_buf.seek(0)
+            return img_buf
+        except Exception as e:
+            print(f"[report.py] Plotly->PNG 실패(Kaleido 문제 가능): {e}")
+            return _tiny_placeholder_png()
+    except Exception as e:
+        print(f"[report.py] create_chart_image 오류: {e}")
+        return _tiny_placeholder_png()
 
 def get_billing_data(df):
     """요금 데이터 계산 및 Context 생성"""
@@ -138,18 +187,17 @@ def get_billing_data(df):
         return {}
 
     # 기간 및 계절 결정
-    month = df['month'].iloc[0]
+    month = int(df['month'].iloc[0])
     season_kor = '겨울철' if month in [1, 2, 11, 12] else \
                  '여름철' if month in [6, 7, 8] else '봄·가을철'
-    
     rate_set = RATES_HIGH_B_II[season_kor]
     
     # 시간대별 사용량
     usage_by_type = df.groupby('작업유형')['전력사용량(kWh)'].sum()
     usage = {
-        '경부하': usage_by_type.get('Light_Load', 0),
-        '중간부하': usage_by_type.get('Medium_Load', 0),
-        '최대부하': usage_by_type.get('Maximum_Load', 0),
+        '경부하': float(usage_by_type.get('Light_Load', 0.0)),
+        '중간부하': float(usage_by_type.get('Medium_Load', 0.0)),
+        '최대부하': float(usage_by_type.get('Maximum_Load', 0.0)),
     }
     
     # 역률 계산
@@ -161,13 +209,11 @@ def get_billing_data(df):
     
     # 요금 계산
     total_basic_fee = APPLIED_POWER * rate_set['기본']
-    
     fees = {
         '경부하': usage['경부하'] * rate_set['경부하'],
         '중간부하': usage['중간부하'] * rate_set['중간부하'],
         '최대부하': usage['최대부하'] * rate_set['최대부하']
     }
-    
     총_전력량_요금 = sum(fees.values())
     지상역률_요금 = total_basic_fee * (지상패널티율_pct / 100.0)
     진상역률_요금 = total_basic_fee * (진상패널티율_pct / 100.0)
@@ -175,7 +221,6 @@ def get_billing_data(df):
     부가가치세 = 모든_요금_합 * 0.1
     총_요금_세금_포함 = 모든_요금_합 + 부가가치세
     
-    # Context 생성
     return {
         'month': month,
         'start': df['측정일시'].min().strftime('%Y-%m-%d'),
@@ -184,72 +229,67 @@ def get_billing_data(df):
         '총_요금': f"{df['전기요금(원)'].sum():,.0f}",
         'season': season_kor,
         '총_기본_요금': f"{total_basic_fee:,.0f}",
-        
         '경부하_단가': f"{rate_set['경부하']:.1f}",
         '경부하총사용': f"{usage['경부하']:,.0f}",
         '총_경부하_요금': f"{fees['경부하']:,.0f}",
-        
         '중간부하_단가': f"{rate_set['중간부하']:.1f}",
         '중간부하총사용': f"{usage['중간부하']:,.0f}",
         '총_중간부하_요금': f"{fees['중간부하']:,.0f}",
-        
         '최대부하_단가': f"{rate_set['최대부하']:.1f}",
         '최대부하총사용': f"{usage['최대부하']:,.0f}",
         '총_최대부하_요금': f"{fees['최대부하']:,.0f}",
-        
         '평균지상역률': f"{pf_day:.2f}%",
         '평균진상역률': f"{pf_night_lead:.2f}%",
         '지상패널티율': f"{지상패널티율_pct:+.2f}%",
         '진상패널티율': f"{진상패널티율_pct:+.2f}%",
-        
         '지상역률_요금': f"{지상역률_요금:,.0f}",
         '진상역률_요금': f"{진상역률_요금:,.0f}",
         '총_전력량_요금': f"{총_전력량_요금:,.0f}",
         '모든_요금_합': f"{모든_요금_합:,.0f}",
         '총_요금_세금_포함': f"{총_요금_세금_포함:,.0f}",
         '부가가치세': f"{부가가치세:,.0f}",
-        'graph1': "일별 사용량 이미지",
-        'graph2': "월별 비교 이미지",
+        # 그래프는 generate_report_from_template에서 주입
     }
 
-
 def generate_report_from_template(filtered_df, template_path):
-    """최종 보고서 생성"""
+    """최종 보고서 생성 (Bytes 반환). 이미지 안전 처리 포함."""
     try:
-        # 1. 템플릿 로드 시도
-        doc = DocxTemplate(template_path)
+        tpl_path = Path(template_path).resolve()
+        if (not tpl_path.exists()) or tpl_path.is_dir():
+            st.error(f"템플릿 파일 누락 오류: 경로를 찾을 수 없습니다. 경로: {tpl_path}")
+            return None
 
-        # 2. 컨텍스트 및 데이터 처리 시도
+        doc = DocxTemplate(str(tpl_path))
+
+        # 컨텍스트
         context = get_billing_data(filtered_df)
-        
-        # 🚨 3. 그래프 이미지 생성 시도 (분리된 try-except 블록)
-        try:
-            image_data1 = create_chart_image(filtered_df, 'daily_usage')
-            image_data2 = create_chart_image(filtered_df, 'monthly_comp')
-            
-            context['graph1'] = InlineImage(doc, image_data1, width=Inches(3))
-            context['graph2'] = InlineImage(doc, image_data2, width=Inches(3))
-            
-        except Exception as img_e:
-            # 🚨 이미지 생성/삽입 오류 발생 시 UI에 출력하고 None 반환
-            st.error("고지서 생성 오류: 이미지 삽입 단계에서 문제가 발생했습니다. (Kaleido/데이터 확인 필요)")
-            st.exception(img_e) # 상세 traceback 출력
-            return None 
+        if not context:
+            st.warning("선택 기간 데이터가 없어 고지서를 생성할 수 없습니다.")
+            return None
 
-        # 4. 렌더링 및 저장 시도
-        doc.render(context)
+        # 그래프 이미지 생성 (항상 플레이스홀더 이상을 보장)
+        image_data1 = create_chart_image(filtered_df, 'daily_usage')
+        image_data2 = create_chart_image(filtered_df, 'monthly_comp')
+
+        # 안전 삽입: 빈 버퍼면 자동 플레이스홀더로 대체
+        context['graph1'] = _safe_inline_image(doc, image_data1, width_in=3.0, use_placeholder=True)
+        context['graph2'] = _safe_inline_image(doc, image_data2, width_in=3.0, use_placeholder=True)
+
+        # 템플릿 렌더
+        try:
+            doc.render(context)
+        except Exception as e:
+            # 템플릿 변수명(Jinja) 오류 등
+            st.error(f"고지서 렌더링 오류: {e}")
+            st.exception(e)
+            return None
+
         file_stream = BytesIO()
         doc.save(file_stream)
         file_stream.seek(0)
         return file_stream.read()
-        
-    except FileNotFoundError:
-        # 🚨 파일 경로 문제 발생 시 출력 (second.py에서 경로 수정을 제대로 했는지 확인)
-        st.error(f"템플릿 파일 누락 오류: 경로를 찾을 수 없습니다. 경로: {template_path}")
-        return None
-        
+
     except Exception as e:
-        # 🚨 DocxTemplate 로딩/렌더링 중 기타 오류 발생 시 출력
         st.error(f"고지서 생성 중 일반 오류 발생: {e}")
-        st.exception(e) 
-        return None # 오류 발생 시 None 반환
+        st.exception(e)
+        return None
