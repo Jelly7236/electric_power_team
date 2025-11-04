@@ -252,27 +252,27 @@ def create_chart_image(df, chart_type):
         # 1) 날짜 정렬 + 날짜형으로 그룹핑
         _df = df.copy().sort_values('측정일시')
         _df['날짜'] = _df['측정일시'].dt.normalize()  # YYYY-MM-DD 00:00:00
-    
+
         daily_usage = (
             _df.groupby(['날짜', '작업유형'])['전력사용량(kWh)']
                .sum()
                .unstack(fill_value=0)
         )
-    
+
         # 2) x축 라벨은 'MM-DD'만 표시
         labels = pd.to_datetime(daily_usage.index).strftime('%m-%d')
         n = len(daily_usage.index)
-    
+
         # 3) 시리즈 안전 추출
         series = {
             'Light_Load':  daily_usage.get('Light_Load',  pd.Series(0, index=daily_usage.index)),
             'Medium_Load': daily_usage.get('Medium_Load', pd.Series(0, index=daily_usage.index)),
             'Maximum_Load':daily_usage.get('Maximum_Load',pd.Series(0, index=daily_usage.index)),
         }
-    
+
         fig, ax = plt.subplots(figsize=(6, 3), dpi=150)
         bottom = np.zeros(n)
-    
+
         for key, label, color in [
             ('Light_Load',  '경부하',   LOAD_COLORS['Light_Load']),
             ('Medium_Load', '중간부하', LOAD_COLORS['Medium_Load']),
@@ -281,29 +281,29 @@ def create_chart_image(df, chart_type):
             vals = series[key].to_numpy() if hasattr(series[key], "to_numpy") else np.zeros(n)
             ax.bar(labels, vals, bottom=bottom, label=label, color=color)
             bottom += vals
-    
+
         ax.set_title("일별 전력사용량 (부하 유형별)")
         ax.set_ylabel("kWh")
         ax.tick_params(axis='x', rotation=45)
         ax.grid(False)
-    
+
         # ✅ 범례는 하단 중앙으로 '한 번만' 표시
         ax.legend(
             loc='lower center',
             ncol=3,
-            bbox_to_anchor=(0.5, -0.32),
+            bbox_to_anchor=(0.5, -0.28),
             frameon=False
         )
-    
+
         # ✅ 범례 공간 확보
-        plt.subplots_adjust(bottom=0.30)
-    
-        fig.tight_layout()
+        plt.subplots_adjust(bottom=0.40)
+
+        # fig.tight_layout()
         fig.savefig(buf, format="png", bbox_inches="tight")
         plt.close(fig)
         buf.seek(0)
         return buf
-    
+
     elif chart_type == 'monthly_comp':
         current_month = int(df['month'].iloc[0])
         current_usage = float(df['전력사용량(kWh)'].sum())
@@ -311,7 +311,7 @@ def create_chart_image(df, chart_type):
         labels = [f'{current_month-1}월 (전월)', f'{current_month}월']
         values = [prev_usage, current_usage]
         colors = ['#ffb366', '#1f77b4']
-    
+
         fig, ax = plt.subplots(figsize=(6, 3), dpi=150)
         ax.bar(labels, values, color=colors)
         for i, v in enumerate(values):
