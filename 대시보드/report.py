@@ -2,13 +2,16 @@ from docxtpl import DocxTemplate, InlineImage
 from io import BytesIO
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 import plotly.express as px
 from docx.shared import Inches
 from pathlib import Path
 import warnings
 import traceback
 import streamlit as st
+# report.py 최상단 어딘가 (streamlit import 아래 등)
+import matplotlib
+matplotlib.use("Agg")  # 헤드리스(배포) 환경용 백엔드
+import matplotlib.pyplot as plt
 
 warnings.filterwarnings("ignore")
 
@@ -123,19 +126,18 @@ def create_chart_image(df, chart_type):
     """
     그래프 이미지 생성 → PNG BytesIO 반환.
     1) 먼저 Plotly+kaleido로 시도
-    2) 실패하면 matplotlib로 동일 차트를 생성(의존성 없이 동작)
+    2) 실패하면 matplotlib로 동일 차트를 생성
     """
-    from io import BytesIO
     buf = BytesIO()
 
     if df.empty:
-        # 빈 그래프라도 보여주자
-        import matplotlib.pyplot as plt
-        plt.figure(figsize=(6,3), dpi=150)
-        plt.text(0.5, 0.5, "데이터 없음", ha="center", va="center")
-        plt.axis("off")
-        plt.tight_layout()
-        plt.savefig(buf, format="png", bbox_inches="tight")
+        # 빈 그래프라도 보여주자 (matplotlib 사용, 함수 내 import 금지!)
+        fig, ax = plt.subplots(figsize=(6, 3), dpi=150)
+        ax.text(0.5, 0.5, "데이터 없음", ha="center", va="center")
+        ax.axis("off")
+        fig.tight_layout()
+        fig.savefig(buf, format="png", bbox_inches="tight")
+        plt.close(fig)
         buf.seek(0)
         return buf
 
@@ -194,12 +196,9 @@ def create_chart_image(df, chart_type):
             buf.seek(0)
             return buf
     except Exception as e:
-        # Plotly→PNG 실패 → 아래에서 matplotlib 폴백으로 진행
         print(f"[report.py] Plotly->PNG 실패: {e}")
 
     # ---------- 2) matplotlib 폴백 ----------
-    plt.tight_layout()
-
     if chart_type == 'daily_usage':
         _df = df.copy()
         _df['날짜'] = _df['측정일시'].dt.date.astype(str)
@@ -227,7 +226,7 @@ def create_chart_image(df, chart_type):
         ax.tick_params(axis='x', rotation=45)
         ax.legend(loc='upper center', ncol=3, bbox_to_anchor=(0.5, 1.25))
         ax.grid(False)
-        plt.tight_layout()
+        fig.tight_layout()
         fig.savefig(buf, format="png", bbox_inches="tight")
         plt.close(fig)
         buf.seek(0)
@@ -248,17 +247,22 @@ def create_chart_image(df, chart_type):
         ax.set_title("총 전력사용량 비교")
         ax.set_ylabel("kWh")
         ax.grid(False)
-        plt.tight_layout()
+        fig.tight_layout()
         fig.savefig(buf, format="png", bbox_inches="tight")
         plt.close(fig)
         buf.seek(0)
         return buf
 
-    # 혹시 모를 경우 아주 작은 이미지라도 반환
-    import matplotlib.pyplot as plt
-    plt.figure(figsize=(6,3), dpi=150); plt.axis("off"); plt.tight_layout()
-    plt.savefig(buf, format="png", bbox_inches="tight"); buf.seek(0)
+    # 최후 폴백: 아주 작은 이미지라도 반환
+    fig, ax = plt.subplots(figsize=(6, 3), dpi=150)
+    ax.axis("off")
+    fig.tight_layout()
+    fig.savefig(buf, format="png", bbox_inches="tight")
+    plt.close(fig)
+    buf.seek(0)
     return buf
+
+
 
 
 def get_billing_data(df):
@@ -347,13 +351,14 @@ def generate_report_from_template(filtered_df, template_path):
             st.warning("선택 기간 데이터가 없어 고지서를 생성할 수 없습니다.")
             return None
 
-        # 그래프 이미지 생성 (항상 플레이스홀더 이상을 보장)
+        # 그래프 이미지 생성 (한 번만 생성)
         image_data1 = create_chart_image(filtered_df, 'daily_usage')
         image_data2 = create_chart_image(filtered_df, 'monthly_comp')
 
-        # 안전 삽입: 빈 버퍼면 자동 플레이스홀더로 대체
-        context['graph1'] = _safe_inline_image(doc, create_chart_image(filtered_df, 'daily_usage'),  width_in=3.0, use_placeholder=True)
-        context['graph2'] = _safe_inline_image(doc, create_chart_image(filtered_df, 'monthly_comp'), width_in=3.0, use_placeholder=True)
+        # 안전 삽입
+        context['graph1'] = _safe_inline_image(doc, image_data1, width_in=3.0, use_placeholder=True)
+        context['graph2'] = _safe_inline_image(doc, image_data2, width_in=3.0, use_placeholder=True)
+
 
 
         # 템플릿 렌더
