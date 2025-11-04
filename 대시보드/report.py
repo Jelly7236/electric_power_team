@@ -1,69 +1,75 @@
-from docxtpl import DocxTemplate, InlineImage 
-from io import BytesIO
-import pandas as pd
-import numpy as np
-import plotly.express as px
-from docx.shared import Inches
+# ============================
+# Global Korean font setup
+# ============================
 from pathlib import Path
-import warnings
-import traceback
-import streamlit as st
-# report.py 최상단 어딘가 (streamlit import 아래 등)
 import matplotlib
-matplotlib.use("Agg")  # 헤드리스(배포) 환경용 백엔드
+matplotlib.use("Agg")  # headless env
 import matplotlib.pyplot as plt
-from matplotlib import font_manager, rc # 👈 폰트 관리를 위한 라이브러리 추가
+from matplotlib import font_manager, rc
+import plotly.io as pio
+import plotly.graph_objects as go
 
-warnings.filterwarnings("ignore")
-
-# ==========================================================
-# 🏆 Matplotlib 한글 폰트 설정 및 캐시 재빌드 (최종 수정)
-# ==========================================================
-def set_korean_font():
-    # 1. Nanum Gothic을 시스템에서 찾도록 시도
-    font_name = 'NanumGothic'
-    font_path_nanum = None
-
-    # 2. 폰트 경로 찾기 (시스템 설치된 나눔고딕을 우선 찾음)
-    for font in font_manager.findSystemFonts(fontpaths=None, fontext='ttf'):
-        # 리눅스 환경에서 나눔고딕 관련 폰트를 찾습니다.
-        if 'nanum' in font.lower():
-            font_path_nanum = font
-            break
-            
-    # 3. 폰트 설정 적용
-    if font_path_nanum:
-        try:
-            # 폰트 파일 경로가 있다면, 실제 폰트 이름(e.g., NanumGothic)을 추출하여 사용
-            font_prop = font_manager.FontProperties(fname=font_path_nanum)
-            rc('font', family=font_prop.get_name())
-            print(f"✅ 폰트 적용 성공: {font_prop.get_name()} (경로: {font_path_nanum})")
-        except Exception as e:
-            # 폰트 파일 자체는 찾았으나 Matplotlib 로드 오류 시, generic 이름으로 시도
-            rc('font', family='NanumGothic') 
-            print(f"⚠️ 폰트 파일 로드 오류: {e}. 'NanumGothic' 이름으로 재설정.")
-    else:
-        # 폰트 파일을 시스템 경로에서 찾지 못한 경우 (패키지 설치가 안 됐을 가능성)
-        rc('font', family='NanumGothic') # 이름으로라도 설정 시도
-        print("❌ 폰트 파일(nanum)을 시스템 경로에서 찾지 못했습니다. NanumGothic 이름으로 설정합니다.")
-        
-    # 공통: 마이너스 기호 깨짐 방지
-    plt.rcParams['axes.unicode_minus'] = False 
-    
-    # 🏆 중요: 폰트 캐시를 완전히 삭제하여 재빌드 (강제 적용)
-    # Streamlit Cloud에서는 폰트 캐시 파일(예: ~/.cache/matplotlib/fontlist-*.json)에 접근 권한이 없으므로,
-    # 코드상으로 할 수 있는 최선의 조치는 rebuild입니다.
+def _base_dir() -> Path:
     try:
-        font_manager._rebuild()
-        print("✅ Matplotlib 폰트 캐시 재빌드 완료.")
-    except:
-        pass
+        return Path(__file__).resolve().parent
+    except NameError:
+        return Path.cwd()
 
-set_korean_font()
-# ==========================================================
+def _find_nanum_font() -> Path | None:
+    """
+    우선순위:
+      1) 프로젝트 내 폰트(배포용)
+      2) 사용자가 말한 경로(대시보드/data_dash/fonts/)
+      3) 시스템 폰트
+    """
+    base = _base_dir()
+    candidates = [
+        base / "www" / "fonts" / "NanumGothic-Regular.ttf",
+        base / "www" / "fonts" / "NanumGothic.ttf",
+        base / "data_dash" / "fonts" / "NanumGothic.ttf",         # ← 네가 알려준 경로
+        base / "data_dash" / "fonts" / "NanumGothic-Regular.ttf",  # 변형명 대비
+    ]
+    for p in candidates:
+        if p.exists():
+            return p
 
+    for f in font_manager.findSystemFonts(fontext="ttf"):
+        if "nanum" in f.lower():
+            return Path(f)
+    return None
 
-warnings.filterwarnings("ignore")
+def setup_korean_fonts():
+    font_path = _find_nanum_font()
+    if font_path and font_path.exists():
+        font_manager.fontManager.addfont(str(font_path))
+        rc("font", family="NanumGothic")
+        print(f"✅ NanumGothic 적용: {font_path}")
+    else:
+        rc("font", family="sans-serif")
+        print("⚠️ NanumGothic 폰트를 찾지 못해 sans-serif로 대체합니다.")
+
+    # 마이너스 부호 깨짐 방지
+    plt.rcParams["axes.unicode_minus"] = False
+
+    # ---- Plotly 기본 템플릿에 폰트 주입 ----
+    try:
+        base_tpl = pio.templates["plotly_white"]
+    except Exception:
+        base_tpl = go.layout.Template()
+
+    nanum_tpl = go.layout.Template(base_tpl)
+    nanum_tpl.layout.font = dict(family="NanumGothic")
+    # (선택) 범례, 축 등 서브요소에도 동일 패밀리 적용
+    if nanum_tpl.layout.legend is None:
+        nanum_tpl.layout.legend = dict()
+    nanum_tpl.layout.legend.font = dict(family="NanumGothic")
+
+    pio.templates["nanum"] = nanum_tpl
+    pio.templates.default = "nanum"
+
+# 한 번만 호출
+setup_korean_fonts()
+
 
 # 요금 단가 및 설정
 RATES_HIGH_B_II = {
