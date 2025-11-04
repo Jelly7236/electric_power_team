@@ -6,6 +6,7 @@ import plotly.express as px
 from docx.shared import Inches
 import warnings
 import traceback
+import streamlit as st
 warnings.filterwarnings("ignore")
 
 # 요금 단가 및 설정
@@ -207,17 +208,25 @@ def generate_report_from_template(filtered_df, template_path):
     """최종 보고서 생성"""
     try:
         # 1. 템플릿 로드 시도
-        doc = DocxTemplate(template_path) # template_path는 str()로 전달되어야 함
+        doc = DocxTemplate(template_path)
 
         # 2. 컨텍스트 및 데이터 처리 시도
         context = get_billing_data(filtered_df)
         
-        # 3. 그래프 이미지 생성 시도
-        context['graph1'] = InlineImage(doc, create_chart_image(filtered_df, 'daily_usage'), 
-                                        width=Inches(3))
-        context['graph2'] = InlineImage(doc, create_chart_image(filtered_df, 'monthly_comp'), 
-                                        width=Inches(3))
-        
+        # 🚨 3. 그래프 이미지 생성 시도 (분리된 try-except 블록)
+        try:
+            image_data1 = create_chart_image(filtered_df, 'daily_usage')
+            image_data2 = create_chart_image(filtered_df, 'monthly_comp')
+            
+            context['graph1'] = InlineImage(doc, image_data1, width=Inches(3))
+            context['graph2'] = InlineImage(doc, image_data2, width=Inches(3))
+            
+        except Exception as img_e:
+            # 🚨 이미지 생성/삽입 오류 발생 시 UI에 출력하고 None 반환
+            st.error("고지서 생성 오류: 이미지 삽입 단계에서 문제가 발생했습니다. (Kaleido/데이터 확인 필요)")
+            st.exception(img_e) # 상세 traceback 출력
+            return None 
+
         # 4. 렌더링 및 저장 시도
         doc.render(context)
         file_stream = BytesIO()
@@ -226,13 +235,12 @@ def generate_report_from_template(filtered_df, template_path):
         return file_stream.read()
         
     except FileNotFoundError:
-        # 🚨 파일 경로 문제 발생 시 출력
-        print(f"REPORT DEBUG ERROR: 템플릿 파일 누락: {template_path}")
-        traceback.print_exc()
-        return b''
+        # 🚨 파일 경로 문제 발생 시 출력 (second.py에서 경로 수정을 제대로 했는지 확인)
+        st.error(f"템플릿 파일 누락 오류: 경로를 찾을 수 없습니다. 경로: {template_path}")
+        return None
         
     except Exception as e:
-        # 🚨 기타 오류 발생 시 출력 (데이터 처리, 그래프 생성, 렌더링 등)
-        print(f"REPORT DEBUG ERROR: 고지서 생성 중 기타 오류 발생: {e}")
-        traceback.print_exc() 
-        return b''
+        # 🚨 DocxTemplate 로딩/렌더링 중 기타 오류 발생 시 출력
+        st.error(f"고지서 생성 중 일반 오류 발생: {e}")
+        st.exception(e) 
+        return None # 오류 발생 시 None 반환
