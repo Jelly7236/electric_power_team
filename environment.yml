@@ -115,6 +115,7 @@ dependencies:
   - patsy=1.0.2=pyhcf101f3_0
   - pcre2=10.46=h5740b90_0
   - pillow=11.1.0=py311h096bfcc_0
+  - plotly
   - pip=25.2=pyhc872135_1
   - pixman=0.46.4=h4043f72_0
   - platformdirs=4.3.7=py311haa95532_0
