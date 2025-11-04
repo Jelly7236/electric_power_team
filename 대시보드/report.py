@@ -2,6 +2,7 @@ from docxtpl import DocxTemplate, InlineImage
 from io import BytesIO
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
 import plotly.express as px
 from docx.shared import Inches
 from pathlib import Path
@@ -119,16 +120,35 @@ def calculate_monthly_power_factor(df):
     return pf_day, pf_night_lead
 
 def create_chart_image(df, chart_type):
-    """그래프 이미지 생성 → PNG BytesIO. 실패 시 플레이스홀더 반환(빈 버퍼 금지)"""
-    try:
-        if df.empty:
-            return _tiny_placeholder_png()
+    """
+    그래프 이미지 생성 → PNG BytesIO 반환.
+    1) 먼저 Plotly+kaleido로 시도
+    2) 실패하면 matplotlib로 동일 차트를 생성(의존성 없이 동작)
+    """
+    from io import BytesIO
+    buf = BytesIO()
 
-        fig = None
+    if df.empty:
+        # 빈 그래프라도 보여주자
+        import matplotlib.pyplot as plt
+        plt.figure(figsize=(6,3), dpi=150)
+        plt.text(0.5, 0.5, "데이터 없음", ha="center", va="center")
+        plt.axis("off")
+        plt.tight_layout()
+        plt.savefig(buf, format="png", bbox_inches="tight")
+        buf.seek(0)
+        return buf
+
+    # ---------- 1) Plotly (+kaleido) 시도 ----------
+    try:
+        import plotly.express as px
+        import plotly.io as pio
+
         if chart_type == 'daily_usage':
-            df = df.copy()
-            df['날짜'] = df['측정일시'].dt.date.astype(str)
-            daily_usage = df.groupby(['날짜', '작업유형'])['전력사용량(kWh)'].sum().reset_index()
+            _df = df.copy()
+            _df['날짜'] = _df['측정일시'].dt.date.astype(str)
+            daily_usage = _df.groupby(['날짜', '작업유형'])['전력사용량(kWh)'].sum().reset_index()
+
             fig = px.bar(
                 daily_usage, x='날짜', y='전력사용량(kWh)', color='작업유형',
                 title='일별 전력사용량 (부하 유형별)', color_discrete_map=LOAD_COLORS
@@ -144,7 +164,7 @@ def create_chart_image(df, chart_type):
         elif chart_type == 'monthly_comp':
             current_month = int(df['month'].iloc[0])
             current_usage = float(df['전력사용량(kWh)'].sum())
-            prev_usage = current_usage * 0.9  # 임시 값
+            prev_usage = current_usage * 0.9  # 임시
             comp_data = pd.DataFrame({
                 '구분': [f'{current_month-1}월 (전월)', f'{current_month}월'],
                 '총 사용량': [prev_usage, current_usage]
@@ -164,22 +184,82 @@ def create_chart_image(df, chart_type):
             )
             fig.update_yaxes(title_text="총 전력사용량 (kWh)", showgrid=False)
             fig.update_xaxes(title_text="", showgrid=False)
+        else:
+            fig = None
 
-        if fig is None:
-            return _tiny_placeholder_png()
-
-        img_buf = BytesIO()
-        try:
-            # Kaleido 필요. 실패해도 플레이스홀더 반환.
-            fig.write_image(img_buf, format="png", width=600, height=300)
-            img_buf.seek(0)
-            return img_buf
-        except Exception as e:
-            print(f"[report.py] Plotly->PNG 실패(Kaleido 문제 가능): {e}")
-            return _tiny_placeholder_png()
+        if fig is not None:
+            # kaleido 필요
+            png_bytes = pio.to_image(fig, format="png", width=600, height=300, scale=1)
+            buf.write(png_bytes)
+            buf.seek(0)
+            return buf
     except Exception as e:
-        print(f"[report.py] create_chart_image 오류: {e}")
-        return _tiny_placeholder_png()
+        # Plotly→PNG 실패 → 아래에서 matplotlib 폴백으로 진행
+        print(f"[report.py] Plotly->PNG 실패: {e}")
+
+    # ---------- 2) matplotlib 폴백 ----------
+    plt.tight_layout()
+
+    if chart_type == 'daily_usage':
+        _df = df.copy()
+        _df['날짜'] = _df['측정일시'].dt.date.astype(str)
+        daily_usage = _df.groupby(['날짜', '작업유형'])['전력사용량(kWh)'].sum().unstack(fill_value=0)
+        dates = daily_usage.index.tolist()
+        series = {
+            'Light_Load': daily_usage.get('Light_Load', pd.Series(0, index=daily_usage.index)),
+            'Medium_Load': daily_usage.get('Medium_Load', pd.Series(0, index=daily_usage.index)),
+            'Maximum_Load': daily_usage.get('Maximum_Load', pd.Series(0, index=daily_usage.index)),
+        }
+
+        fig, ax = plt.subplots(figsize=(6, 3), dpi=150)
+        bottom = np.zeros(len(dates))
+        for key, label, color in [
+            ('Light_Load', '경부하', LOAD_COLORS['Light_Load']),
+            ('Medium_Load', '중간부하', LOAD_COLORS['Medium_Load']),
+            ('Maximum_Load', '최대부하', LOAD_COLORS['Maximum_Load']),
+        ]:
+            vals = series[key].values if hasattr(series[key], "values") else np.zeros(len(dates))
+            ax.bar(dates, vals, bottom=bottom, label=label, color=color)
+            bottom += vals
+
+        ax.set_title("일별 전력사용량 (부하 유형별)")
+        ax.set_ylabel("kWh")
+        ax.tick_params(axis='x', rotation=45)
+        ax.legend(loc='upper center', ncol=3, bbox_to_anchor=(0.5, 1.25))
+        ax.grid(False)
+        plt.tight_layout()
+        fig.savefig(buf, format="png", bbox_inches="tight")
+        plt.close(fig)
+        buf.seek(0)
+        return buf
+
+    elif chart_type == 'monthly_comp':
+        current_month = int(df['month'].iloc[0])
+        current_usage = float(df['전력사용량(kWh)'].sum())
+        prev_usage = current_usage * 0.9  # 임시
+        labels = [f'{current_month-1}월 (전월)', f'{current_month}월']
+        values = [prev_usage, current_usage]
+        colors = ['#ffb366', '#1f77b4']
+
+        fig, ax = plt.subplots(figsize=(6, 3), dpi=150)
+        ax.bar(labels, values, color=colors)
+        for i, v in enumerate(values):
+            ax.text(i, v, f"{v:,.0f} kWh", ha='center', va='bottom')
+        ax.set_title("총 전력사용량 비교")
+        ax.set_ylabel("kWh")
+        ax.grid(False)
+        plt.tight_layout()
+        fig.savefig(buf, format="png", bbox_inches="tight")
+        plt.close(fig)
+        buf.seek(0)
+        return buf
+
+    # 혹시 모를 경우 아주 작은 이미지라도 반환
+    import matplotlib.pyplot as plt
+    plt.figure(figsize=(6,3), dpi=150); plt.axis("off"); plt.tight_layout()
+    plt.savefig(buf, format="png", bbox_inches="tight"); buf.seek(0)
+    return buf
+
 
 def get_billing_data(df):
     """요금 데이터 계산 및 Context 생성"""
@@ -272,8 +352,9 @@ def generate_report_from_template(filtered_df, template_path):
         image_data2 = create_chart_image(filtered_df, 'monthly_comp')
 
         # 안전 삽입: 빈 버퍼면 자동 플레이스홀더로 대체
-        context['graph1'] = _safe_inline_image(doc, image_data1, width_in=3.0, use_placeholder=True)
-        context['graph2'] = _safe_inline_image(doc, image_data2, width_in=3.0, use_placeholder=True)
+        context['graph1'] = _safe_inline_image(doc, create_chart_image(filtered_df, 'daily_usage'),  width_in=3.0, use_placeholder=True)
+        context['graph2'] = _safe_inline_image(doc, create_chart_image(filtered_df, 'monthly_comp'), width_in=3.0, use_placeholder=True)
+
 
         # 템플릿 렌더
         try:
