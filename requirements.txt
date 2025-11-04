@@ -20,4 +20,4 @@ jinja2>=3.1
 pillow>=10.0      # 템플릿에 이미지 넣거나 리사이즈할 때 안정적
 lxml>=5.0         # 아래 docxcompose 쓸 때 필요
 docxcompose>=1.4  # 여러 .docx를 한 파일로 병합할 때
-google-generativeai = 0.8.5
+google-generativeai==0.8.5
