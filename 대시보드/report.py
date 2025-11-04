@@ -5,6 +5,7 @@ import numpy as np
 import plotly.express as px
 from docx.shared import Inches
 import warnings
+import traceback
 warnings.filterwarnings("ignore")
 
 # 요금 단가 및 설정
@@ -205,20 +206,33 @@ def get_billing_data(df):
 def generate_report_from_template(filtered_df, template_path):
     """최종 보고서 생성"""
     try:
-        doc = DocxTemplate(template_path)
+        # 1. 템플릿 로드 시도
+        doc = DocxTemplate(template_path) # template_path는 str()로 전달되어야 함
+
+        # 2. 컨텍스트 및 데이터 처리 시도
         context = get_billing_data(filtered_df)
         
-        # 그래프 이미지 추가
+        # 3. 그래프 이미지 생성 시도
         context['graph1'] = InlineImage(doc, create_chart_image(filtered_df, 'daily_usage'), 
-                                       width=Inches(3))
+                                        width=Inches(3))
         context['graph2'] = InlineImage(doc, create_chart_image(filtered_df, 'monthly_comp'), 
-                                       width=Inches(3))
+                                        width=Inches(3))
         
+        # 4. 렌더링 및 저장 시도
         doc.render(context)
         file_stream = BytesIO()
         doc.save(file_stream)
         file_stream.seek(0)
         return file_stream.read()
         
-    except (FileNotFoundError, Exception):
+    except FileNotFoundError:
+        # 🚨 파일 경로 문제 발생 시 출력
+        print(f"REPORT DEBUG ERROR: 템플릿 파일 누락: {template_path}")
+        traceback.print_exc()
+        return b''
+        
+    except Exception as e:
+        # 🚨 기타 오류 발생 시 출력 (데이터 처리, 그래프 생성, 렌더링 등)
+        print(f"REPORT DEBUG ERROR: 고지서 생성 중 기타 오류 발생: {e}")
+        traceback.print_exc() 
         return b''
