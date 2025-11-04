@@ -24,32 +24,38 @@ def set_korean_font():
     font_name = 'NanumGothic'
     font_path_nanum = None
 
-    # 2. 폰트 경로 찾기 (Streamlit Cloud 환경에서는 이 부분이 주로 작동)
-    for font in font_manager.findSystemFonts():
-        if 'nanumgothic' in font.lower():
+    # 2. 폰트 경로 찾기 (시스템 설치된 나눔고딕을 우선 찾음)
+    for font in font_manager.findSystemFonts(fontpaths=None, fontext='ttf'):
+        # 리눅스 환경에서 나눔고딕 관련 폰트를 찾습니다.
+        if 'nanum' in font.lower():
             font_path_nanum = font
             break
-
+            
     # 3. 폰트 설정 적용
     if font_path_nanum:
-        font_prop = font_manager.FontProperties(fname=font_path_nanum)
-        rc('font', family=font_prop.get_name())
-        print(f"✅ 폰트 적용: {font_prop.get_name()} (시스템/패키지 경로)")
-    else:
-        # 최후의 수단: 직접 업로드한 폰트 파일 경로 지정
-        # (프로젝트 루트의 'fonts/' 폴더에 'NanumGothic.ttf' 파일이 있다고 가정)
         try:
+            # 폰트 파일 경로가 있다면, 실제 폰트 이름(e.g., NanumGothic)을 추출하여 사용
+            font_prop = font_manager.FontProperties(fname=font_path_nanum)
+            rc('font', family=font_prop.get_name())
+            print(f"✅ 폰트 적용 성공: {font_prop.get_name()} (경로: {font_path_nanum})")
+        except Exception as e:
+            # 폰트 파일 자체는 찾았으나 Matplotlib 로드 오류 시, generic 이름으로 시도
             rc('font', family='NanumGothic') 
-            print("⚠️ NanumGothic 이름으로 설정 시도 (packages.txt 설치 필요)")
-        except:
-            print("❌ 폰트 설정 실패. packages.txt 및 fonts/ 파일 확인 필요.")
-            
+            print(f"⚠️ 폰트 파일 로드 오류: {e}. 'NanumGothic' 이름으로 재설정.")
+    else:
+        # 폰트 파일을 시스템 경로에서 찾지 못한 경우 (패키지 설치가 안 됐을 가능성)
+        rc('font', family='NanumGothic') # 이름으로라도 설정 시도
+        print("❌ 폰트 파일(nanum)을 시스템 경로에서 찾지 못했습니다. NanumGothic 이름으로 설정합니다.")
+        
     # 공통: 마이너스 기호 깨짐 방지
     plt.rcParams['axes.unicode_minus'] = False 
     
-    # 폰트 캐시를 재빌드하여 Streamlit Cloud 환경에서 즉시 적용되도록 함
+    # 🏆 중요: 폰트 캐시를 완전히 삭제하여 재빌드 (강제 적용)
+    # Streamlit Cloud에서는 폰트 캐시 파일(예: ~/.cache/matplotlib/fontlist-*.json)에 접근 권한이 없으므로,
+    # 코드상으로 할 수 있는 최선의 조치는 rebuild입니다.
     try:
         font_manager._rebuild()
+        print("✅ Matplotlib 폰트 캐시 재빌드 완료.")
     except:
         pass
 
