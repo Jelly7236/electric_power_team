@@ -278,7 +278,7 @@ DATA_DIR = Path("data_dash")
 TRAIN_PATH = DATA_DIR / "train_dash_df.csv"
 MONTHLY_PF_PATH = DATA_DIR / "월별 역률 패널티 계산.csv"
 RATE_PDF = DATA_DIR / "2024년도7월1일시행전기요금표(종합)_출력용.pdf"
-TEMPLATE_PATH = Path(r"C:\Users\USER\Desktop\electric_power_-team\대시보드\data_dash\고지서_템플릿.docx")
+TEMPLATE_PATH = Path(r"C:\Users\USER\Desktop\electric_power_team\대시보드\data_dash\고지서_템플릿.docx")
 
 # ============================================================================
 # 유틸리티 함수
