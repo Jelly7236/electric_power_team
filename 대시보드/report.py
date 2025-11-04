@@ -250,7 +250,7 @@ def create_chart_image(df, chart_type):
     # ---------- 2) matplotlib 폴백 ----------
     if chart_type == 'daily_usage':
         _df = df.copy()
-        _df['날짜'] = _df['측정일시'].dt.date.astype(str)
+        _df['날짜'] = _df['측정일시'].dt.strftime('%m-%d')
         daily_usage = _df.groupby(['날짜', '작업유형'])['전력사용량(kWh)'].sum().unstack(fill_value=0)
         dates = daily_usage.index.tolist()
         series = {
